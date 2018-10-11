@@ -1,19 +1,19 @@
 package common
 
 type Amount struct {
-	Amount uint `json:"amount" bson:"amount"`
+	Amount int `json:"amount" bson:"amount"`
 	AssetId string `json:"assetId" bson:"assetId"`
 }
 
 type RequestParams struct {
 	Memo string `json:"memo" bson:"memo"`
-	Percent uint `json:"percent" bson:"percent"`
+	Percent int `json:"percent" bson:"percent"`
 	Amount Amount `json:"amount" bson:"amount"`
 	ProxyAccount string `json:"proxyAccount" bson:"proxyAccount"`
 	Signatures []string `json:"signatures" bson:"signatures"`
 	To string `json:"to" bson:"to"`
 	From string `json:"from" bson:"from"`
-	Expiration uint `json:"expiration" bson:"expiration"`
+	Expiration int64 `json:"expiration" bson:"expiration"`
 }
 
 type CreateDataExchangeResp struct {

@@ -8,6 +8,12 @@ import (
 	"reflect"
 	"github.com/asmcos/requests"
 	"github.com/bitly/go-simplejson"
+	"des-sdk-go/des-sdk-go/common"
+	"time"
+	"crypto/md5"
+	"encoding/json"
+	"math/rand"
+	"strings"
 )
 
 type MerchantClient struct {
@@ -22,29 +28,12 @@ func NewMerchantClient(privateKey string, account string, baseUrl string) *Merch
 }
 
 func (cli *MerchantClient)getProduct(productId int) (*simplejson.Json, error) {
-	//resp, err  := http.Get(cli.BaseUrl + fmt.Sprintf("/api/product/%v", productId))
-	//if err != nil {
-	//	return nil, err
-	//}
-	//defer resp.Body.Close()
-	//body, err := ioutil.ReadAll(resp.Body)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//fmt.Println(body)
-	//js, err := simplejson.NewJson(body)
-	//fmt.Println(js)
-	//result := js.Get("result")
-	//return result, nil
 	resp, err := requests.Get(cli.BaseUrl + fmt.Sprintf("/api/product/%v", productId))
 	if err != nil {
 		return nil, err
 	}
 	js, err := simplejson.NewJson(resp.Content())
 	fmt.Println(js)
-
-	//var json map[string]interface{}
-	//resp.Json(&json)
 	return js, nil
 }
 
@@ -59,39 +48,101 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 		panic("there is no datasource.")
 	}
 	fmt.Println("[][][]",arr)
+	//TODO validate input params
+
+	var createDataExchangeResp common.CreateDataExchangeResp
+	var dataExchangeReqList []common.CreateDataExchangeResp
+	param := map[string]interface{}{"params": params, "timestamp": time.Now().Unix()}
+	expiration := time.Now().Unix() + common.DEFAULT_TIMEOUT
+	createDataExchangeResp.RequestParams.Amount.Amount, err = productResult.Get("product").Get("price").Get("amount").Int()
+	if err != nil {
+		panic("there is no amount.")
+	}
+	createDataExchangeResp.RequestParams.Amount.AssetId, err = productResult.Get("product").Get("price").Get("assetId").String()
+	if err != nil {
+		panic("there is no assetId.")
+	}
 	for _, datasourceAccount := range arr {
 		fmt.Println(reflect.TypeOf(datasourceAccount))
 		if account, ok := datasourceAccount.(map[string]interface{}); ok {
 			fmt.Println("1111", account["accountId"])
+			createDataExchangeResp.RequestParams.To, ok = account["accountId"].(string)
 		}
+		createDataExchangeResp.RequestParams.From = cli.AccountId
+		createDataExchangeResp.RequestParams.ProxyAccount, err = productResult.Get("des").Get("accountId").String()
+		createDataExchangeResp.RequestParams.Percent, err = productResult.Get("des").Get("percent").Int()
+		tempData, err := json.Marshal(param)
+		if err != nil {
+			fmt.Println("json.Marshal failed:", err)
+			panic("json.Marshal failed")
+		}
+		memo := md5.Sum(tempData)
+		createDataExchangeResp.RequestParams.Memo = fmt.Sprintf("%x", memo)
+		createDataExchangeResp.RequestParams.Expiration = expiration
+		requestParams := createDataExchangeResp.RequestParams
+		createDataExchangeResp.RequestParams.Signatures = common.Signature(common.Serilization(requestParams), cli.PrivateKey) //TODO signature
+		createDataExchangeResp.Nonce = rand.Int63()
+		var publicKey string
+		if account, ok := datasourceAccount.(map[string]interface{}); ok {
+			fmt.Println("publicKey: ", account["publicKey"])
+			publicKey = account["publicKey"].(string)
+		}
+		createDataExchangeResp.Params = common.Encrypt(cli.PrivateKey, publicKey, createDataExchangeResp.Nonce, param)
+		dataExchangeReqList = append(dataExchangeReqList, createDataExchangeResp)
 	}
-	//data, ok := productResult["onlineDatasources"]
-	//fmt.Println(data, reflect.TypeOf(data))
-	//if !ok {
-	//	panic("there is no online dataSources")
-	//}
-	//var dataExchangeReqList []interface{}
-	//var req common.CreateDataExchangeResp
-
-	//create request data
-	//if items, ok := data.([]interface{}); ok {
-	//	if len(items) == 0 {
-	//		panic("there is no dataSources")
-	//	}
-	//	for _, item := range items{
-	//		if lilItem, ok := item.(map[string]string); ok {
-	//			if strings.Compare(cli.AccountId, lilItem["accountId"]) == 0{
-	//				continue
-	//			}
-	//			req.RequestParams.Amount =
-	//		}
-	//	}
-	//}
-	//dataExchangeReqList = append(dataExchangeReqList, item)
-	//fmt.Println(dataExchangeReqList, reflect.TypeOf(dataExchangeReqList))
-
-
 	fmt.Println(productResult)
 	fmt.Println(params)
-	return 0
+
+	if len(dataExchangeReqList) == 0 {
+		panic("dataExchange request is empty")
+	}
+	req := requests.Requests()
+	req.Header.Set("Content-Type","application/json")
+	resp, err := req.Post(cli.BaseUrl + fmt.Sprintf("/api/request/create/%d", productId), json.Marshal(dataExchangeReqList))
+	if err != nil {
+		panic("there is something wrong")
+	}
+	//if resp.R.StatusCode == 200 {
+	//
+	//}
+	js, err := simplejson.NewJson(resp.Content())
+	id, _ := js.Get("request_id").Int()
+	return id
+}
+
+func (cli *MerchantClient)GetResult(requestId int, timeout int64) interface{} {
+	start := time.Now().Unix()
+	for {
+		var a = 1
+		resp, err := requests.Get(cli.BaseUrl + fmt.Sprintf("/api/request/%v", requestId))
+		if err != nil {
+			fmt.Println("there is something wrong")
+		}
+		dataExchange, err := simplejson.NewJson(resp.Content())
+		status, _ := dataExchange.Get("status").String()
+		if dataExchange != nil && strings.Compare(status, "IN_PROGRESS") == 0 {
+			data, _ := dataExchange.Get("datasources").Array()
+			if len(data) == 0 {
+				return data
+			}
+			for _, dataExchangeDetail := range data {
+				if data, ok := interface{}(dataExchangeDetail).(map[string]interface{}); ok {
+					stauts, _ := data["status"].(string)
+					if strings.Compare(stauts, "SUCCESS") != 0 {
+						continue
+					}
+					data["data"] = cli.Decrypt(cli.PrivateKey,
+						data["datasourcePublicKey"],
+						data["nonce"],
+						data["data"])
+				}
+			}
+			return dataExchange
+		}
+		time.Sleep(0.06)
+		if time.Now().Unix() - start > timeout {
+			break
+		}
+	}
+	return nil
 }
