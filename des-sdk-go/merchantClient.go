@@ -92,7 +92,11 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 			fmt.Println("publicKey: ", account["publicKey"])
 			publicKey = account["publicKey"].(string)
 		}
-		createDataExchangeResp.Params = common.Encrypt(cli.PrivateKey, publicKey, createDataExchangeResp.Nonce, param)
+		parameter, err := json.Marshal(param)
+		if err != nil {
+			panic("json.Marshal failed:")
+		}
+		createDataExchangeResp.Params = common.Encrypt(cli.PrivateKey, publicKey, createDataExchangeResp.Nonce, string(parameter))
 		dataExchangeReqList = append(dataExchangeReqList, createDataExchangeResp)
 	}
 

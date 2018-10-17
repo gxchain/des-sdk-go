@@ -17,7 +17,7 @@ type RequestParams struct {
 }
 
 type CreateDataExchangeResp struct {
-	Nonce int64 `json:"nonce" bson:"nonce"`
+	Nonce uint64 `json:"nonce" bson:"nonce"`
 	Params string `json:"params" bson:"params"`
 	RequestParams RequestParams `json:"requestParams" bson:"requestParams"`
 }

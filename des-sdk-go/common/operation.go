@@ -17,7 +17,7 @@ type SignMessageOperation struct {
 	types.OperationFee
 	From types.GrapheneID `json:"from"`
 	To types.GrapheneID `json:"to"`
-	Proxy_account types.GrapheneID `json:"proxy_account"`
+	ProxyAccount types.GrapheneID `json:"proxy_account"`
 	Amount types.Asset `json:"amount"`
 	Percent types.Int16 `json:"percent"`
 	Memo string `json:"memo"`
@@ -47,7 +47,7 @@ func (p SignMessageOperation) Marshal(enc *util.TypeEncoder) error {
 		return errors.Annotate(err, "encode to")
 	}
 
-	if err := enc.Encode(p.Proxy_account); err != nil {
+	if err := enc.Encode(p.ProxyAccount); err != nil {
 		return errors.Annotate(err, "encode proxy account")
 	}
 

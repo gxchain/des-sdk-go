@@ -66,11 +66,6 @@ func Digest(data string) ([]byte, error) {
 	return digest, nil
 }
 
-//func SignCompact(prv *btcec.PrivateKey, hash []byte) (sig []byte, err error) {
-//	sig, err = btcec.SignCompact(btcec.S256(), prv, hash, true)
-//	return
-//}
-
 func isCanonical(sig []byte) bool {
 	d := sig
 	t1 := (d[1] & 0x80) == 0
@@ -120,10 +115,62 @@ func Serilization(data interface{}) string{
 	return ""
 }
 
-func Encrypt(privateKey string, publicKey string, nonce int64, data interface{}) string{
-	return ""
+func Encrypt(privateKey string, publicKey string, nonce uint64, data string) string{
+	to, err := types.NewPublicKeyFromString(publicKey)
+	if err != nil {
+		panic("NewPublicKeyFromString failed")
+	}
+
+	priv, err := types.NewPrivateKeyFromWif(privateKey)
+	if err != nil {
+		panic("NewPrivateKeyFromWif failed")
+	}
+
+	msg, err := types.BufferFromString(data)
+	if err != nil {
+		panic("data is wrong")
+	}
+
+	memo := types.Memo{
+		From:    *priv.PublicKey(),
+		To:      *to,
+		Message: msg,
+		Nonce:   types.UInt64(nonce),
+	}
+
+	if err := memo.Encrypt(priv, data); err != nil {
+		panic("encrypt failed")
+	}
+	return memo.Message.String()
 }
 
-func Decrypt(privateKey string, publicKey string, nonce int64, data interface{}) string{
-	return ""
+func Decrypt(privateKey string, publicKey string, nonce int64, data string) string{
+	to, err := types.NewPublicKeyFromString(publicKey)
+	if err != nil {
+		panic("NewPublicKeyFromString failed")
+	}
+
+	priv, err := types.NewPrivateKeyFromWif(privateKey)
+	if err != nil {
+		panic("NewPrivateKeyFromWif failed")
+	}
+
+	msg, err := types.BufferFromString(data)
+	if err != nil {
+		panic("data is wrong")
+	}
+
+	memo := types.Memo{
+		From:    *priv.PublicKey(),
+		To:      *to,
+		Message: msg,
+		Nonce:   types.UInt64(nonce),
+	}
+
+	message, err := memo.Decrypt(priv)
+
+	if err != nil {
+		panic("encrypt failed")
+	}
+	return message
 }
