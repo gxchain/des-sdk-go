@@ -4,21 +4,23 @@ import (
 	"github.com/denkhaus/bitshares/types"
 	"github.com/denkhaus/bitshares/util"
 	"github.com/juju/errors"
+	"time"
+	"fmt"
 )
 
-func init() {
-	types.OperationMap[types.OperationTypeAccountCreate] = func() types.Operation {
-		op := &SignMessageOperation{}
-		return op
-	}
-}
+//func init() {
+//	types.OperationMap[types.OperationTypeAccountCreate] = func() types.Operation {
+//		op := &SignMessageOperation{}
+//		return op
+//	}
+//}
 
 type SignMessageOperation struct {
-	types.OperationFee
+	//types.OperationFee
 	From types.GrapheneID `json:"from"`
 	To types.GrapheneID `json:"to"`
 	ProxyAccount types.GrapheneID `json:"proxy_account"`
-	Amount types.Asset `json:"amount"`
+	Amount types.AssetAmount `json:"amount"`
 	Percent types.Int16 `json:"percent"`
 	Memo string `json:"memo"`
 	Expiration types.Time `json:"expiration"`
@@ -31,13 +33,6 @@ func (p SignMessageOperation) Type() types.OperationType{
 
 
 func (p SignMessageOperation) Marshal(enc *util.TypeEncoder) error {
-	if err := enc.Encode(int8(p.Type())); err != nil {
-		return errors.Annotate(err, "encode OperationType")
-	}
-
-	if err := enc.Encode(p.Fee); err != nil {
-		return errors.Annotate(err, "encode fee")
-	}
 
 	if err := enc.Encode(p.From); err != nil {
 		return errors.Annotate(err, "encode from")
@@ -75,9 +70,23 @@ func (p SignMessageOperation) Marshal(enc *util.TypeEncoder) error {
 }
 
 //NewAccountCreateOperation creates a new AccountCreateOperation
-func NewSignMessageOperation() *SignMessageOperation {
+func NewSignMessageOperation(param RequestParams) *SignMessageOperation {
+	time := time.Unix(param.Expiration, 0)
+	amount := types.Int64(param.Amount.Amount)
+	assetId := *types.NewGrapheneID(param.Amount.AssetId)
 	tx := SignMessageOperation{
-		Extension: 8,
+		*types.NewGrapheneID(param.From),
+		*types.NewGrapheneID(param.To),
+		*types.NewGrapheneID(param.ProxyAccount),
+		types.AssetAmount{
+			amount,
+			assetId,
+			},
+		types.Int16(param.Percent),
+		param.Memo,
+		types.Time{time},
+		uint8(0),
 	}
+	fmt.Println(tx)
 	return &tx
 }

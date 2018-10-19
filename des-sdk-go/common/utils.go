@@ -4,15 +4,20 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"errors"
 	"crypto/sha1"
-	"encoding/hex"
+	//"encoding/hex"
 	"github.com/denkhaus/bitshares/types"
+	"github.com/denkhaus/bitshares/util"
+	"github.com/denkhaus/bitshares/config"
+	"bytes"
+	"fmt"
 )
 
 func VarifyParameters(params map[string]interface{}) bool {
 	return true
 }
 
-func Sign(data string, wifs []string) ([]types.Buffer, error){
+func Sign(data RequestParams, wifs []string) ([]string, error){
+	config.SetCurrentConfig(config.ChainIDBTS)
 	privKeys := make([]*types.PrivateKey, len(wifs))
 	for index, wif := range wifs {
 		privKeys[index], _  = types.NewPrivateKeyFromWif(wif)
@@ -20,14 +25,15 @@ func Sign(data string, wifs []string) ([]types.Buffer, error){
 		//
 		//}
 	}
-	var signatures []types.Buffer
+	var signatures []string
 	for _, prv := range privKeys {
 		ecdsaKey := prv.ToECDSA()
 		if ecdsaKey.Curve != btcec.S256() {
 			return nil, errors.New("Invalid PrivateKey")
 		}
 		for {
-			digest, err := Digest(data) //TODO what is digest
+			serilData := Serilization(data)
+			digest, err := Digest(serilData) //TODO what is digest
 			if err != nil {
 				return nil, errors.New("Digest wrong")
 			}
@@ -38,9 +44,9 @@ func Sign(data string, wifs []string) ([]types.Buffer, error){
 			}
 
 			if !isCanonical(sig) {
-				continue
+				data.Expiration += 1
 			} else {
-				signatures = append(signatures, types.Buffer(sig))
+				signatures = append(signatures, types.Buffer(sig).String())
 				break
 			}
 		}
@@ -48,14 +54,15 @@ func Sign(data string, wifs []string) ([]types.Buffer, error){
 	return signatures, nil
 }
 
-//TODO there is no 4 + 27
-func Digest(data string) ([]byte, error) {
+//TODO there is no 4 + 27 which is in python
+func Digest(data []byte) ([]byte, error) {
 
 	writer := sha1.New()
-	rawData, err := hex.DecodeString(data)
-	if err != nil {
-		return nil, errors.New("Decode failed")
-	}
+	//rawData, err := hex.DecodeString(data)
+	rawData := data
+	//if err != nil {
+	//	return nil, errors.New("Decode failed")
+	//}
 
 	if _, err := writer.Write(rawData); err != nil{
 		return nil, errors.New("Write rawDara")
@@ -77,7 +84,7 @@ func isCanonical(sig []byte) bool {
 
 
 //Verify verifies the underlying transaction against a given KeyBag
-func Verify(keyBag *KeyBag, data string, signatures []types.Buffer) (bool, error) {
+func Verify(keyBag *KeyBag, data []byte, signatures []types.Buffer) (bool, error) {
 	dig, err := Digest(data)
 	if err != nil {
 		return false, errors.New("Digest")
@@ -110,13 +117,20 @@ func Verify(keyBag *KeyBag, data string, signatures []types.Buffer) (bool, error
 }
 
 
-func Serilization(data interface{}) string{
-
-	return ""
+func Serilization(data RequestParams) []byte{
+	serilData := NewSignMessageOperation(data)
+	var b bytes.Buffer
+	enc := util.NewTypeEncoder(&b)
+	serilData.Marshal(enc)
+	fmt.Println(5555555, b.Bytes(), b.String())
+	return b.Bytes()
 }
 
 func Encrypt(privateKey string, publicKey string, nonce uint64, data string) string{
-	to, err := types.NewPublicKeyFromString(publicKey)
+	cnf := config.CurrentConfig()
+	prefixChain := cnf.Prefix()
+	publicKey2 := prefixChain + publicKey[len(prefixChain):]
+	to, err := types.NewPublicKeyFromString(publicKey2)
 	if err != nil {
 		panic("NewPublicKeyFromString failed")
 	}
@@ -125,8 +139,9 @@ func Encrypt(privateKey string, publicKey string, nonce uint64, data string) str
 	if err != nil {
 		panic("NewPrivateKeyFromWif failed")
 	}
-
-	msg, err := types.BufferFromString(data)
+	fmt.Println(data)
+	//msg, err := types.BufferFromString(data)
+	msg := []byte(data)
 	if err != nil {
 		panic("data is wrong")
 	}

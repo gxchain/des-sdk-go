@@ -85,8 +85,11 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 		createDataExchangeResp.RequestParams.Memo = fmt.Sprintf("%x", memo)
 		createDataExchangeResp.RequestParams.Expiration = expiration
 		requestParams := createDataExchangeResp.RequestParams
-		createDataExchangeResp.RequestParams.Signatures = []string{common.Sign(common.Serilization(requestParams), cli.PrivateKey)} //TODO signature
-		createDataExchangeResp.Nonce = rand.Int63()
+		//create signature
+		signature, err := common.Sign(requestParams, []string{cli.PrivateKey})
+		fmt.Println(requestParams, 2222222, signature)
+		createDataExchangeResp.RequestParams.Signatures = signature //TODO signature
+		createDataExchangeResp.Nonce = uint64(rand.Int63())
 		var publicKey string
 		if account, ok := datasourceAccount.(map[string]interface{}); ok {
 			fmt.Println("publicKey: ", account["publicKey"])
@@ -96,6 +99,7 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 		if err != nil {
 			panic("json.Marshal failed:")
 		}
+		fmt.Println(string(parameter))
 		createDataExchangeResp.Params = common.Encrypt(cli.PrivateKey, publicKey, createDataExchangeResp.Nonce, string(parameter))
 		dataExchangeReqList = append(dataExchangeReqList, createDataExchangeResp)
 	}
@@ -108,19 +112,25 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 	}
 	req := requests.Requests()
 	req.Header.Set("Content-Type","application/json")
-	resp, err := req.Post(cli.BaseUrl + fmt.Sprintf("/api/request/create/%d", productId), json.Marshal(dataExchangeReqList))
+	reqParam, err := json.Marshal(dataExchangeReqList)
+	fmt.Println(cli.BaseUrl + fmt.Sprintf("/api/request/create/%d", productId), string(reqParam))
+	resp, err := req.Post(cli.BaseUrl + fmt.Sprintf("/api/request/create/%d", productId), reqParam)
+	fmt.Println(resp.R.StatusCode, resp.Content(), resp.Text(), resp.R.Header, resp.R.Body)
 	if err != nil {
 		panic("there is something wrong")
 	}
-	//if resp.R.StatusCode == 200 {
-	//
-	//}
-	js, err := simplejson.NewJson(resp.Content())
-	resultId, _ := js.Get("request_id").String()
+	resultId := ""
+	if resp.R.StatusCode == 200 {
+
+		js, _ := simplejson.NewJson(resp.Content())
+		fmt.Println(js)
+		resultId, _ = js.Get("request_id").String()
+	}
+
 	return resultId
 }
 
-func (cli *MerchantClient)GetResult(requestId string, timeout int64) interface{} {
+func (cli *MerchantClient)GetResult(requestId string, timeout int64) *simplejson.Json {
 	start := time.Now().Unix()
 	for {
 		resp, err := requests.Get(cli.BaseUrl + fmt.Sprintf("/api/request/%v", requestId))
@@ -132,7 +142,7 @@ func (cli *MerchantClient)GetResult(requestId string, timeout int64) interface{}
 		if dataExchange != nil && strings.Compare(status, "IN_PROGRESS") == 0 {
 			data, _ := dataExchange.Get("datasources").Array()
 			if len(data) == 0 {
-				return data
+				return dataExchange
 			}
 			for _, dataExchangeDetail := range data {
 				if data, ok := interface{}(dataExchangeDetail).(map[string]interface{}); ok {
@@ -148,7 +158,7 @@ func (cli *MerchantClient)GetResult(requestId string, timeout int64) interface{}
 			}
 			return dataExchange
 		}
-		time.Sleep(0.06)
+		time.Sleep(1)
 		if time.Now().Unix() - start > timeout {
 			break
 		}
