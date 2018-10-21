@@ -5,7 +5,6 @@ import (
 	"github.com/denkhaus/bitshares/util"
 	"github.com/juju/errors"
 	"time"
-	"fmt"
 )
 
 //func init() {
@@ -81,12 +80,11 @@ func NewSignMessageOperation(param RequestParams) *SignMessageOperation {
 		types.AssetAmount{
 			amount,
 			assetId,
-			},
+		},
 		types.Int16(param.Percent),
 		param.Memo,
 		types.Time{time},
 		uint8(0),
 	}
-	fmt.Println(tx)
 	return &tx
 }

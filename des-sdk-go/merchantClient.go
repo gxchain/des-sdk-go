@@ -1,11 +1,8 @@
 package des_sdk_go
 
 import (
-	//"net/http"
 	"fmt"
-	//"io/ioutil"
-	//"github.com/bitly/go-simplejson"
-	"reflect"
+
 	"github.com/asmcos/requests"
 	"github.com/bitly/go-simplejson"
 	"des-sdk-go/des-sdk-go/common"
@@ -14,6 +11,9 @@ import (
 	"encoding/json"
 	"math/rand"
 	"strings"
+	"net/http"
+	"bytes"
+	"io/ioutil"
 )
 
 type MerchantClient struct {
@@ -33,13 +33,13 @@ func (cli *MerchantClient)getProduct(productId int) (*simplejson.Json, error) {
 		return nil, err
 	}
 	js, err := simplejson.NewJson(resp.Content())
-	fmt.Println(js)
+	//fmt.Println(js)
 	return js, nil
 }
 
 func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[string]interface{}) string {
 	productResult, err := cli.getProduct(productId)
-	fmt.Println(reflect.TypeOf(productResult))
+	//fmt.Println(reflect.TypeOf(productResult))
 	if err != nil {
 		panic("get product result failed")
 	}
@@ -47,12 +47,12 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 	if err != nil || len(arr) == 0 {
 		panic("there is no datasource.")
 	}
-	fmt.Println("[][][]",arr)
+	//fmt.Println("[][][]",arr)
 	//TODO validate input params
 	if common.VarifyParameters(params) {
-
+		
 	}else {
-
+		
 	}
 
 	var createDataExchangeResp common.CreateDataExchangeResp
@@ -68,9 +68,8 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 		panic("there is no assetId.")
 	}
 	for _, datasourceAccount := range arr {
-		fmt.Println(reflect.TypeOf(datasourceAccount))
+		//fmt.Println(reflect.TypeOf(datasourceAccount))
 		if account, ok := datasourceAccount.(map[string]interface{}); ok {
-			fmt.Println("1111", account["accountId"])
 			createDataExchangeResp.RequestParams.To, ok = account["accountId"].(string)
 		}
 		createDataExchangeResp.RequestParams.From = cli.AccountId
@@ -82,48 +81,63 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 			panic("json.Marshal failed")
 		}
 		memo := md5.Sum(tempData)
-		createDataExchangeResp.RequestParams.Memo = fmt.Sprintf("%x", memo)
+		createDataExchangeResp.RequestParams.Memo = fmt.Sprintf("memo %x", memo)
 		createDataExchangeResp.RequestParams.Expiration = expiration
-		requestParams := createDataExchangeResp.RequestParams
+		requestParams := &createDataExchangeResp.RequestParams
+
 		//create signature
 		signature, err := common.Sign(requestParams, []string{cli.PrivateKey})
-		fmt.Println(requestParams, 2222222, signature)
-		createDataExchangeResp.RequestParams.Signatures = signature //TODO signature
+		createDataExchangeResp.RequestParams.Signatures = signature
 		createDataExchangeResp.Nonce = uint64(rand.Int63())
+
+
 		var publicKey string
 		if account, ok := datasourceAccount.(map[string]interface{}); ok {
-			fmt.Println("publicKey: ", account["publicKey"])
+			//fmt.Println("publicKey: ", account["publicKey"])
 			publicKey = account["publicKey"].(string)
 		}
-		parameter, err := json.Marshal(param)
+		//fmt.Println("parameter: ", tempData)
 		if err != nil {
 			panic("json.Marshal failed:")
 		}
-		fmt.Println(string(parameter))
-		createDataExchangeResp.Params = common.Encrypt(cli.PrivateKey, publicKey, createDataExchangeResp.Nonce, string(parameter))
+		//fmt.Println("encrypt:", cli.PrivateKey, publicKey, createDataExchangeResp.Nonce, tempData, string(tempData)) for test
+
+		createDataExchangeResp.Params = common.Encrypt(cli.PrivateKey, publicKey, createDataExchangeResp.Nonce, tempData)
 		dataExchangeReqList = append(dataExchangeReqList, createDataExchangeResp)
 	}
 
-	fmt.Println(productResult)
-	fmt.Println(params)
+	//fmt.Println(productResult)
+	//fmt.Println(params)
 
 	if len(dataExchangeReqList) == 0 {
 		panic("dataExchange request is empty")
 	}
-	req := requests.Requests()
-	req.Header.Set("Content-Type","application/json")
+
 	reqParam, err := json.Marshal(dataExchangeReqList)
-	fmt.Println(cli.BaseUrl + fmt.Sprintf("/api/request/create/%d", productId), string(reqParam))
-	resp, err := req.Post(cli.BaseUrl + fmt.Sprintf("/api/request/create/%d", productId), reqParam)
-	fmt.Println(resp.R.StatusCode, resp.Content(), resp.Text(), resp.R.Header, resp.R.Body)
+	req, err := http.NewRequest("POST", cli.BaseUrl + fmt.Sprintf("/api/request/create/%d", productId), bytes.NewBuffer(reqParam))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("there is something wrong in http")
+		return ""
+	}
+	defer resp.Body.Close()
+
+	statuscode := resp.StatusCode
+	body, _ := ioutil.ReadAll(resp.Body)
+	//fmt.Println(string(body))
+	//fmt.Println(statuscode)
+	//fmt.Println(statuscode, body, resp.Body, resp.Header)
 	if err != nil {
 		panic("there is something wrong")
 	}
 	resultId := ""
-	if resp.R.StatusCode == 200 {
+	if statuscode == 200 {
 
-		js, _ := simplejson.NewJson(resp.Content())
-		fmt.Println(js)
+		js, _ := simplejson.NewJson(body)
+		//fmt.Println(js)
 		resultId, _ = js.Get("request_id").String()
 	}
 
@@ -132,6 +146,14 @@ func (cli *MerchantClient)CreateDataExchangeRequest(productId int, params map[st
 
 func (cli *MerchantClient)GetResult(requestId string, timeout int64) *simplejson.Json {
 	start := time.Now().Unix()
+	if requestId == "" {
+		var result []string
+		result = append(result, "create data exchange is something wrong.")
+		resultAll := map[string]interface{}{"datasources": result}
+		result2, _ := json.Marshal(resultAll)
+		result3, _ := simplejson.NewJson(result2)
+		return result3
+	}
 	for {
 		resp, err := requests.Get(cli.BaseUrl + fmt.Sprintf("/api/request/%v", requestId))
 		if err != nil {
@@ -139,7 +161,11 @@ func (cli *MerchantClient)GetResult(requestId string, timeout int64) *simplejson
 		}
 		dataExchange, err := simplejson.NewJson(resp.Content())
 		status, _ := dataExchange.Get("status").String()
-		if dataExchange != nil && strings.Compare(status, "IN_PROGRESS") == 0 {
+		fmt.Println(status)
+		if strings.Compare(status, "FAIL") == 0 {
+			return dataExchange
+		}
+		if dataExchange != nil && strings.Compare(status, "IN_PROGRESS") != 0 {
 			data, _ := dataExchange.Get("datasources").Array()
 			if len(data) == 0 {
 				return dataExchange
@@ -150,10 +176,21 @@ func (cli *MerchantClient)GetResult(requestId string, timeout int64) *simplejson
 					if strings.Compare(stauts, "SUCCESS") != 0 {
 						continue
 					}
-					data["data"] = common.Decrypt(cli.PrivateKey,
-						data["datasourcePublicKey"].(string),
-						data["nonce"].(int64),
-						data["data"].(string))
+					datasourcePublicKey, _ := data["datasourcePublicKey"].(string)
+					nonce, _ := data["nonce"].(json.Number)
+					data, _ := data["data"].(string)
+					nonceNum, _ := nonce.Int64()
+					data = common.Decrypt(cli.PrivateKey,
+						datasourcePublicKey,
+						nonceNum,
+						data,
+					)
+					var result []string
+					result = append(result,data)
+					resultAll := map[string]interface{}{"datasources": result}
+					result2, _ := json.Marshal(resultAll)
+					result3, _ := simplejson.NewJson(result2)
+					dataExchange = result3
 				}
 			}
 			return dataExchange

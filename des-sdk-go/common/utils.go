@@ -3,28 +3,25 @@ package common
 import (
 	"github.com/btcsuite/btcd/btcec"
 	"errors"
-	"crypto/sha1"
 	//"encoding/hex"
 	"github.com/denkhaus/bitshares/types"
 	"github.com/denkhaus/bitshares/util"
 	"github.com/denkhaus/bitshares/config"
 	"bytes"
-	"fmt"
+	"crypto/sha256"
 )
 
 func VarifyParameters(params map[string]interface{}) bool {
 	return true
 }
 
-func Sign(data RequestParams, wifs []string) ([]string, error){
+func Sign(data *RequestParams, wifs []string) ([]string, error){
 	config.SetCurrentConfig(config.ChainIDBTS)
 	privKeys := make([]*types.PrivateKey, len(wifs))
 	for index, wif := range wifs {
 		privKeys[index], _  = types.NewPrivateKeyFromWif(wif)
-		//if err != nil {
-		//
-		//}
 	}
+
 	var signatures []string
 	for _, prv := range privKeys {
 		ecdsaKey := prv.ToECDSA()
@@ -32,13 +29,13 @@ func Sign(data RequestParams, wifs []string) ([]string, error){
 			return nil, errors.New("Invalid PrivateKey")
 		}
 		for {
-			serilData := Serilization(data)
-			digest, err := Digest(serilData) //TODO what is digest
+			serilData := Serilization(*data)
+			digest, err := Digest(serilData)
 			if err != nil {
 				return nil, errors.New("Digest wrong")
 			}
-
 			sig, err := prv.SignCompact(digest)
+			//fmt.Println("sign: ", hex.EncodeToString(sig), len(hex.EncodeToString(sig))) for Test
 			if err != nil {
 				return nil, errors.New("SignCompact")
 			}
@@ -47,6 +44,7 @@ func Sign(data RequestParams, wifs []string) ([]string, error){
 				data.Expiration += 1
 			} else {
 				signatures = append(signatures, types.Buffer(sig).String())
+				//fmt.Println(signatures)
 				break
 			}
 		}
@@ -54,22 +52,17 @@ func Sign(data RequestParams, wifs []string) ([]string, error){
 	return signatures, nil
 }
 
-//TODO there is no 4 + 27 which is in python
 func Digest(data []byte) ([]byte, error) {
-
-	writer := sha1.New()
+	writer := sha256.New()
 	//rawData, err := hex.DecodeString(data)
 	rawData := data
 	//if err != nil {
 	//	return nil, errors.New("Decode failed")
 	//}
-
 	if _, err := writer.Write(rawData); err != nil{
 		return nil, errors.New("Write rawDara")
 	}
-
 	digest := writer.Sum(nil)
-
 	return digest, nil
 }
 
@@ -122,11 +115,10 @@ func Serilization(data RequestParams) []byte{
 	var b bytes.Buffer
 	enc := util.NewTypeEncoder(&b)
 	serilData.Marshal(enc)
-	fmt.Println(5555555, b.Bytes(), b.String())
 	return b.Bytes()
 }
 
-func Encrypt(privateKey string, publicKey string, nonce uint64, data string) string{
+func Encrypt(privateKey string, publicKey string, nonce uint64, data []byte) string{
 	cnf := config.CurrentConfig()
 	prefixChain := cnf.Prefix()
 	publicKey2 := prefixChain + publicKey[len(prefixChain):]
@@ -134,14 +126,14 @@ func Encrypt(privateKey string, publicKey string, nonce uint64, data string) str
 	if err != nil {
 		panic("NewPublicKeyFromString failed")
 	}
-
 	priv, err := types.NewPrivateKeyFromWif(privateKey)
 	if err != nil {
 		panic("NewPrivateKeyFromWif failed")
 	}
-	fmt.Println(data)
+	msg := types.Buffer(data)
 	//msg, err := types.BufferFromString(data)
-	msg := []byte(data)
+	//msg := []byte(data)
+	//fmt.Println(msg.String(), len(msg.String()), msg, len(msg))
 	if err != nil {
 		panic("data is wrong")
 	}
@@ -152,15 +144,18 @@ func Encrypt(privateKey string, publicKey string, nonce uint64, data string) str
 		Message: msg,
 		Nonce:   types.UInt64(nonce),
 	}
-
-	if err := memo.Encrypt(priv, data); err != nil {
+	//fmt.Println(msg.String(), len(msg.String()))
+	if err := memo.Encrypt(priv, string(data)); err != nil {
 		panic("encrypt failed")
 	}
 	return memo.Message.String()
 }
 
 func Decrypt(privateKey string, publicKey string, nonce int64, data string) string{
-	to, err := types.NewPublicKeyFromString(publicKey)
+	cnf := config.CurrentConfig()
+	prefixChain := cnf.Prefix()
+	publicKey2 := prefixChain + publicKey[len(prefixChain):]
+	to, err := types.NewPublicKeyFromString(publicKey2)
 	if err != nil {
 		panic("NewPublicKeyFromString failed")
 	}
